@@ -268,6 +268,8 @@ INT read_trigger_event(char *pevent, INT off)
     float time;
     float errtime;
 
+    printf("Test: trigger_event\n");
+
     loop_count = 0;
     do
     {
@@ -457,7 +459,6 @@ INT read_trigger_event(char *pevent, INT off)
     *calc_value++ = meanOffset;
     *calc_value++ = highVoltage;
     *calc_value++ = lowVoltage;
-
 
     int size3 = bk_close(pevent, calc_value);
 
