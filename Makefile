@@ -11,8 +11,8 @@ POKY_ARM=armv7a-vfp-neon-poky-linux-gnueabi
 GCC_BIN=$(POKY_DIR)/$(POKY_HOST)/usr/bin/$(POKY_EXT)/$(POKY_EXT)-
 
 #
-CFLAGS = -static -g -Wall   --sysroot $(POKY_DIR)/$(POKY_ARM) -I$(MIDASSYS)/include
-LDFLAGS =  -g -Wall --sysroot $(POKY_DIR)/$(POKY_ARM) -Wl,-rpath,$(POKY_DIR)/$(POKY_ARM)/usr/lib -pthread -lutil -lrt -ldl
+CFLAGS = -static -g -Wall -std=c++11 --sysroot $(POKY_DIR)/$(POKY_ARM) -I$(MIDASSYS)/include -I../altera_hps/hwlib/include
+LDFLAGS =  -g -Wall --sysroot  $(POKY_DIR)/$(POKY_ARM) -Wl,-rpath,$(POKY_DIR)/$(POKY_ARM)/usr/lib -pthread -lutil -lrt -ldl
 CC = $(GCC_BIN)gcc
 ARCH= arm
 
