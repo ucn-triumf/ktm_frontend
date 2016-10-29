@@ -65,6 +65,7 @@ INT resume_run(INT run_number, char *error);
 INT frontend_loop();
 
 INT read_trigger_event(char *pevent, INT off);
+INT save_offsets(char *pevent, INT off);
 INT read_scaler_event(char *pevent, INT off);
 
 /*-- Equipment list ------------------------------------------------*/
@@ -87,6 +88,22 @@ EQUIPMENT equipment[] = {
       0,                        /* don't log history */
       "", "", "",},
      read_trigger_event,        /* readout routine */
+    },
+
+    {"KTM_Calc",                     /* equipment name */
+     {1, 0,                     /* event ID, trigger mask */
+      "SYSTEM",                 /* event buffer */
+      EQ_PERIODIC,              /* equipment type */
+      LAM_SOURCE(0, 0xFFFFFF),  /* event source crate 0, all stations */
+      "MIDAS",                  /* format */
+      TRUE,                     /* enabled */
+      RO_RUNNING,               /* read only when running */
+      10,                     /* poll for 1000ms */
+      0,                        /* stop run after this event limit */
+      0,                        /* number of sub events */
+      0,                        /* don't log history */
+      "", "", "",},
+     save_offsets,        /* readout routine */
     },
 
     {""}
@@ -247,14 +264,20 @@ extern "C" { INT interrupt_configure(INT cmd, INT source, POINTER_T adr)
 }
 
 
+unsigned int triggerOffset;
+unsigned int meanOffset;
+unsigned int highVoltage;
+unsigned int lowVoltage;
+unsigned int measuredNotchWidth = 0;
 /*-- Event readout -------------------------------------------------*/
 INT read_trigger_event(char *pevent, INT off)
 {
     unsigned int DataIn [600];
-    unsigned int triggerOffset;
-    unsigned int meanOffset;
-    unsigned int highVoltage;
-    unsigned int lowVoltage;
+    triggerOffset = 0;
+    meanOffset = 0;
+    highVoltage = 0;
+    lowVoltage = 0;
+    //    measuredNotchWidth = 0;
     unsigned int DataOut;
     unsigned int errorType;
     int errorData;
@@ -268,7 +291,7 @@ INT read_trigger_event(char *pevent, INT off)
     float time;
     float errtime;
 
-    printf("Test: trigger_event\n");
+    //    printf("Test: trigger_event\n");
 
     loop_count = 0;
     do
@@ -437,30 +460,66 @@ INT read_trigger_event(char *pevent, INT off)
     bk_init32(pevent);
 
     uint32_t *data_in;
-    uint32_t *calc_value;
+
 
     /* create structured KTM bank of double words */
     bk_create(pevent, "KTM0", TID_DWORD, (void **)&data_in);
 
 
     // write raw data from FPGA to 1st bank
-    printf("loop count %i\n",loop_count);
+    int mid_point = (highVoltage-lowVoltage)/2;
+    
+    bool inNotch = false;
+    bool finishedNotch = false;
+    int startNotch = -1, endNotch = -1;
+
+
     loop_count2 = 0;
     while( loop_count2 < (loop_count-1) ){
-        *data_in++ = DataIn[loop_count2];
-	//printf("%i %i\n",loop_count2,DataIn[loop_count2]);
-         loop_count2++;
+      *data_in++ = DataIn[loop_count2];
+      int adc =  (DataIn[loop_count2]) & 0xfff;
+      loop_count2++;           
+      if(finishedNotch) continue;
+
+      if(!inNotch){
+	if(adc < 800){
+	  startNotch = loop_count2;
+	  inNotch = true;
+	}
+      }else{
+	if(adc > 800){
+	  endNotch = loop_count2;
+	  finishedNotch = true;
+	}
+      }
+
+    }
+    if((endNotch - startNotch) > 6){
+      measuredNotchWidth = endNotch - startNotch;
     }
 
     int size2 = bk_close(pevent, data_in);
+
+
+    return bk_size(pevent);
+}
+
+
+INT save_offsets(char *pevent, INT off)
+{
+
+    bk_init32(pevent);
+    uint32_t *calc_value;
+
     bk_create(pevent, "KTM1", TID_DWORD, (void **)&calc_value);
     // write calculated values to the 2nd bank
     *calc_value++ = triggerOffset;
     *calc_value++ = meanOffset;
     *calc_value++ = highVoltage;
     *calc_value++ = lowVoltage;
-
+    *calc_value++ = measuredNotchWidth;
     int size3 = bk_close(pevent, calc_value);
 
     return bk_size(pevent);
+
 }
