@@ -63,7 +63,7 @@ void KTMHistograms::UpdateHistograms(TDataContainer& dataContainer){
     uint32_t word = data->GetData32()[i];
     
     double time = (word & 0xfffff000) >> 12;
-    double volt = ((double)(word & 0xfff)) * (1.0/4096.0);
+    double volt = ((double)(word & 0xfff));
     //std::cout << time << " " << volt << std::endl;
     GetHistogram(0)->SetBinContent(i+1,volt);
 
