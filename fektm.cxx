@@ -8,6 +8,7 @@ KTM frontend program
 #include "midas.h"
 #include <stdint.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 // SoC includes
 #include <time.h>
@@ -138,6 +139,7 @@ void *virtual_base;
 int fd;
 void *h2p_lw_addr;
 
+  static int warnCount = 0;
 /*-- Frontend Init -------------------------------------------------*/
 INT frontend_init()
 {
@@ -159,6 +161,9 @@ INT frontend_init()
     }
 
     h2p_lw_addr = virtual_base + ( ( unsigned long  )( ALT_LWFPGASLVS_OFST + HPS_DATA_BASE ) & ( unsigned long)( HW_REGS_MASK ) );
+
+warnCount = 0;
+
     return SUCCESS;
 }
 
@@ -291,27 +296,70 @@ INT read_trigger_event(char *pevent, INT off)
     float time;
     float errtime;
 
-    //    printf("Test: trigger_event\n");
+    //printf("Test: trigger_event\n");
 
+    struct timeval raLastTime;  
+    gettimeofday(&raLastTime, NULL);
+    
     loop_count = 0;
     do
     {
         // control led
+
         DataOut = 3;
         *(uint32_t *)h2p_lw_addr = DataOut;
+
         DataIn[loop_count] = *(uint32_t *)h2p_lw_addr;
+	int loopChecker = 0;
         while(DataIn[loop_count]%2 == 0 && (DataIn[loop_count] != 2 || loop_count==0))
         {
+
+	  
             DataIn[loop_count] = *(uint32_t *)h2p_lw_addr;
+
+	    // Break out of this loop if there doesn't seem to be new data coming
+	    loopChecker++;
+	    if(loopChecker%50000 == 0){
+
+
+	      struct timeval nowTime2;  
+	      gettimeofday(&nowTime2, NULL);
+	      
+	      double dtime2 = nowTime2.tv_sec - raLastTime.tv_sec + (nowTime2.tv_usec - raLastTime.tv_usec)/1000000.0;
+
+	      if(dtime2 > 10){
+
+		if(warnCount%100 == 0){
+		  cm_msg(MINFO,"fektm","took more than 10seconds trying to read FPGA.  Aborting event.");
+		}
+		warnCount++;
+		return 0;
+		
+	      }
+	    }
+
         }
         DataOut = 1;
         *(uint32_t *)h2p_lw_addr = DataOut;
         loop_count++;
+
     } while(DataIn[loop_count-1] != 2 && DataIn[loop_count-1]!=3 && loop_count<500);
 
+    struct timeval nowTime2;  
+    gettimeofday(&nowTime2, NULL);
+    
+    double dtime2 = nowTime2.tv_sec - raLastTime.tv_sec + (nowTime2.tv_usec - raLastTime.tv_usec)/1000000.0;
+
+    printf("First loop: %f\n",dtime2);
+
+
+    bool In3 = false;
+    int errorTypeSave = -1;
     if(DataIn[loop_count-1]==3)
-    {
-        DataOut = 64;
+      {
+	
+	In3 = true;//printf("loop 3\n");
+      DataOut = 64;
         *(uint32_t *)h2p_lw_addr = DataOut;
         DataIn[loop_count]= *(uint32_t *)h2p_lw_addr;
         while(DataIn[loop_count]%2 == 0)
@@ -322,7 +370,8 @@ INT read_trigger_event(char *pevent, INT off)
         errorType = (((DataIn[loop_count]-1)*1.0/128.0)-errorData)*64.0;
         errtime = 0.0125*errorData+0.00005;
         timeinfo = localtime ( &rawtime );
-
+	
+	errorTypeSave = errorType;
         loop_count2=0;
 
         while( loop_count2<(loop_count-1) ){
@@ -383,7 +432,7 @@ INT read_trigger_event(char *pevent, INT off)
             printf("The time was: %3.4f\n",errtime);
             break;
         case 13:
-            printf("Pulser valley is larger than 150us\n");
+	  //printf("Pulser valley is larger than 150us\n");
             break;
         case 14:
             printf("Pulser signal is high for longer than 1.25ms\n");
@@ -456,6 +505,20 @@ INT read_trigger_event(char *pevent, INT off)
         }
     }
 
+    struct timeval nowTime;  
+    gettimeofday(&nowTime, NULL);
+    
+    double dtime = nowTime.tv_sec - raLastTime.tv_sec + (nowTime.tv_usec - raLastTime.tv_usec)/1000000.0;
+
+    if(dtime > 5){
+      printf("Time difference (1): %f s\n",dtime2);
+      printf("Time difference (2): %f\n",dtime);
+      if(In3){
+	printf("In3\n");
+      }
+      printf("Error type %i\n",errorTypeSave);
+    }
+
     /* init bank structure */
     bk_init32(pevent);
 
@@ -507,6 +570,9 @@ INT read_trigger_event(char *pevent, INT off)
 
 INT save_offsets(char *pevent, INT off)
 {
+
+  // If the measured notch is zero, haven't had a proper ADC reading yet; don't create bank.
+  if(measuredNotchWidth == 0) return 0;
 
     bk_init32(pevent);
     uint32_t *calc_value;
